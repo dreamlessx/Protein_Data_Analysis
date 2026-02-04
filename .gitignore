@@ -1,0 +1,19 @@
+# Large protein structure files
+proteins/
+*.pdb
+*.pdb.gz
+*.cif
+*.cif.gz
+
+# Temporary files
+temp/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Log files
+*.log
+nohup.out
+
+# Backup files
+*_backup.*

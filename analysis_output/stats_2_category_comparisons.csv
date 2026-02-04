@@ -1,0 +1,22 @@
+Metric,Comparison,U_statistic,p_value,Effect_size,Significant
+clashscore,AlphaFold vs Boltz,4679.5,0.43427921360194255,0.46795,False
+clashscore,AlphaFold vs Experimental,1161.0,0.25837745489571595,0.5805,False
+clashscore,Boltz vs Experimental,1317.5,0.02559737811070919,0.65875,True
+rama_favored_pct,AlphaFold vs Boltz,1188.0,1.2367078580319273e-20,0.1188,True
+rama_favored_pct,AlphaFold vs Experimental,1453.0,0.001438993143625994,0.7265,True
+rama_favored_pct,Boltz vs Experimental,1937.0,4.240406478144274e-11,0.9685,True
+rama_outliers_pct,AlphaFold vs Boltz,8197.5,5.695504387192024e-16,0.81975,True
+rama_outliers_pct,AlphaFold vs Experimental,997.0,0.9859040614788002,0.4985,False
+rama_outliers_pct,Boltz vs Experimental,239.0,7.002964217148515e-09,0.1195,True
+rotamer_outliers_pct,AlphaFold vs Boltz,7766.5,9.150264470190656e-12,0.77665,True
+rotamer_outliers_pct,AlphaFold vs Experimental,163.5,3.809091306805132e-09,0.08175,True
+rotamer_outliers_pct,Boltz vs Experimental,80.5,4.2419772826359266e-11,0.04025,True
+bond_rmsz,AlphaFold vs Boltz,8902.0,1.5296079745297103e-21,0.8902,True
+bond_rmsz,AlphaFold vs Experimental,1852.0,2.0212153388242315e-09,0.926,True
+bond_rmsz,Boltz vs Experimental,1416.0,0.003434910925603156,0.708,True
+angle_rmsz,AlphaFold vs Boltz,9144.0,4.315058132895332e-24,0.9144,True
+angle_rmsz,AlphaFold vs Experimental,1249.0,0.08013775704613205,0.6245,False
+angle_rmsz,Boltz vs Experimental,187.0,1.0559855391397347e-08,0.0935,True
+molprobity_score,AlphaFold vs Boltz,5233.5,0.5691431485544564,0.52335,False
+molprobity_score,AlphaFold vs Experimental,792.0,0.14396504202854127,0.396,False
+molprobity_score,Boltz vs Experimental,756.5,0.08704876478156033,0.37825,False

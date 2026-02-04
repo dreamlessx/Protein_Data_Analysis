@@ -1,0 +1,19 @@
+Category,Type,Protein,Subcategory,MP Score,Clashscore
+AlphaFold,Best,1AY7,raw,0.500,0.00
+AlphaFold,Best,1BVN,raw,0.500,0.00
+AlphaFold,Best,1AVX,raw,0.500,0.00
+AlphaFold,Worst,1HCF,raw,2.750,29.15
+AlphaFold,Worst,1HCF,raw,2.769,21.15
+AlphaFold,Worst,1K74,raw,2.856,30.01
+Boltz,Best,1AY7,raw,1.066,2.78
+Boltz,Best,1AY7,raw,1.066,2.78
+Boltz,Best,1AY7,raw,1.201,4.18
+Boltz,Worst,1GHQ,raw,2.918,290.87
+Boltz,Worst,1GHQ,raw,2.919,291.75
+Boltz,Worst,1GHQ,raw,2.940,306.08
+Experimental,Best,2I25,original,1.026,2.44
+Experimental,Best,1EFN,relaxed_cartesian_beta,1.220,4.42
+Experimental,Best,1EFN,relaxed_dualspace_ref15,1.265,5.03
+Experimental,Worst,1K74,original,2.869,23.36
+Experimental,Worst,1EWY,original,3.166,48.69
+Experimental,Worst,1FCC,original,3.296,44.93

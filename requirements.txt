@@ -1,0 +1,24 @@
+# Protein Structure Validation Analysis
+# Vanderbilt Project Dependencies
+
+# Core data manipulation
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Statistical analysis
+scipy>=1.10.0
+statsmodels>=0.14.0
+scikit-learn>=1.3.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.15.0
+
+# Reporting
+tabulate>=0.9.0
+jinja2>=3.1.0
+openpyxl>=3.1.0
+
+# Utilities
+tqdm>=4.65.0
