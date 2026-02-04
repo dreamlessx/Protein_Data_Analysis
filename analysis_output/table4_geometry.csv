@@ -1,0 +1,5 @@
+Category,State,N,Bond RMSZ,Angle RMSZ
+AlphaFold,raw/original,100,2.136 ± 1.225,1.190 ± 0.282
+Boltz,raw/original,100,1.331 ± 1.623,0.866 ± 0.705
+Experimental,raw/original,20,0.776 ± 0.475,1.139 ± 0.400
+Experimental,relaxed,600,4.516 ± 0.045,0.918 ± 0.103
