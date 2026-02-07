@@ -36,7 +36,6 @@ STANDARD_AA = {
 AROMATIC_RESIDUES = {'PHE', 'TYR', 'TRP', 'HIS'}
 
 ROSETTA_BINS = [
-    '/Users/muditagar/Rosetta/main/source/bin/score_jd2.default.macosclangrelease',
     'score_jd2.default.macosclangrelease',
     'score_jd2.default.linuxgccrelease',
     'score_jd2',
