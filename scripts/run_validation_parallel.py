@@ -158,7 +158,7 @@ def run_mp_tools(pdb_path):
                 f.write(pdb_h)
                 tmp = f.name
 
-            probe = '/private/tmp/probe/probe' if os.path.exists('/private/tmp/probe/probe') else 'probe'
+            probe = 'probe'
             r = subprocess.run([probe, '-4H', '-mc', '-self', 'ALL', '-unformated', tmp],
                               capture_output=True, text=True, timeout=60)
             os.unlink(tmp)
