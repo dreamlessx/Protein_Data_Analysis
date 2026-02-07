@@ -1,20 +1,7 @@
 #!/usr/bin/env python3
 """
-posebusters.py
-Protein structure validity checks inspired by PoseBusters (adapted for proteins).
-
-Tests:
-1. structure_loaded - Can the structure be parsed?
-2. valid_residues - Are all residues recognized amino acids?
-3. backbone_connected - Is the backbone continuous?
-4. bond_lengths - Are peptide bond lengths within tolerance?
-5. bond_angles - Are backbone bond angles within tolerance?
-6. steric_clashes - Are there severe steric clashes?
-7. aromatic_flatness - Are aromatic rings planar?
-8. peptide_planarity - Are peptide bonds planar (omega angle)?
-9. chirality - Are amino acids L-configuration?
-10. complete_residues - Are all backbone atoms present?
-11. internal_energy - Rosetta energy score (optional)
+Protein structure validity checks adapted from PoseBusters methodology.
+Validates geometry, connectivity, and energetics of protein structures.
 """
 
 import argparse
@@ -23,7 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import os
-import sys
+import uuid
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -36,12 +23,10 @@ warnings.filterwarnings('ignore')
 PROJECT_DIR = Path(__file__).parent.parent
 PROTEINS_DIR = PROJECT_DIR / "proteins"
 OUTPUT_DIR = PROJECT_DIR / "validation_results"
-PER_PROTEIN_DIR = OUTPUT_DIR / "per_protein"
 TEMP_DIR = OUTPUT_DIR / "temp"
 
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-PER_PROTEIN_DIR.mkdir(parents=True, exist_ok=True)
-TEMP_DIR.mkdir(parents=True, exist_ok=True)
+for d in [OUTPUT_DIR, TEMP_DIR]:
+    d.mkdir(parents=True, exist_ok=True)
 
 STANDARD_AA = {
     'ALA', 'ARG', 'ASN', 'ASP', 'CYS', 'GLN', 'GLU', 'GLY', 'HIS', 'ILE',
@@ -57,183 +42,159 @@ ROSETTA_BINS = [
     'score_jd2',
 ]
 
+VDW_RADII = {'C': 1.7, 'N': 1.55, 'O': 1.52, 'S': 1.8, 'H': 1.2}
+
+RING_ATOMS = {
+    'PHE': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],
+    'TYR': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],
+    'TRP': ['CG', 'CD1', 'CD2', 'NE1', 'CE2', 'CE3', 'CZ2', 'CZ3', 'CH2'],
+    'HIS': ['CG', 'ND1', 'CD2', 'CE1', 'NE2']
+}
+
 
 def find_rosetta():
-    """Find Rosetta score_jd2 binary."""
-    for bin_path in ROSETTA_BINS:
-        if Path(bin_path).exists():
-            return bin_path
-        if shutil.which(bin_path):
-            return bin_path
+    for path in ROSETTA_BINS:
+        if Path(path).exists() or shutil.which(path):
+            return path
     return None
 
 
 def find_structures():
-    """Find ALL PDB structure files."""
+    """Enumerate all PDB files across experimental, AlphaFold, and Boltz predictions."""
     structures = []
 
     for protein_dir in sorted(PROTEINS_DIR.iterdir()):
         if not protein_dir.is_dir():
             continue
 
-        protein_id = protein_dir.name
+        pid = protein_dir.name
 
-        # Experimental original
-        exp_pdb = protein_dir / f"{protein_id}.pdb"
+        # Experimental
+        exp_pdb = protein_dir / f"{pid}.pdb"
         if exp_pdb.exists():
             structures.append({
-                'path': str(exp_pdb),
-                'protein': protein_id,
-                'category': 'Experimental',
-                'subcategory': 'original',
-                'model': 'exp'
+                'path': str(exp_pdb), 'protein': pid,
+                'category': 'Experimental', 'subcategory': 'original', 'model': 'exp'
             })
 
         # AlphaFold raw
         af_dir = protein_dir / "AF"
         if af_dir.exists():
             for pdb in sorted(af_dir.glob("ranked_*.pdb")):
-                model_num = pdb.stem.split('_')[1]
                 structures.append({
-                    'path': str(pdb),
-                    'protein': protein_id,
-                    'category': 'AlphaFold',
-                    'subcategory': 'raw',
-                    'model': f"model{model_num}"
+                    'path': str(pdb), 'protein': pid,
+                    'category': 'AlphaFold', 'subcategory': 'raw',
+                    'model': f"model{pdb.stem.split('_')[1]}"
                 })
 
         # Boltz raw
         boltz_dir = protein_dir / "Boltz"
         if boltz_dir.exists():
             for pdb in sorted(boltz_dir.glob("boltz_input_model_*.pdb")):
-                model_num = pdb.stem.split('_')[-1]
                 structures.append({
-                    'path': str(pdb),
-                    'protein': protein_id,
-                    'category': 'Boltz',
-                    'subcategory': 'raw',
-                    'model': f"model{model_num}"
+                    'path': str(pdb), 'protein': pid,
+                    'category': 'Boltz', 'subcategory': 'raw',
+                    'model': f"model{pdb.stem.split('_')[-1]}"
                 })
 
-        # Experimental relaxed
-        for relax_type in ['cartesian_beta', 'cartesian_ref15', 'dualspace_beta',
-                           'dualspace_ref15', 'normal_beta', 'normal_ref15']:
-            relax_dir = protein_dir / relax_type
+        # Relaxed structures (experimental)
+        for protocol in ['cartesian_beta', 'cartesian_ref15', 'dualspace_beta',
+                         'dualspace_ref15', 'normal_beta', 'normal_ref15']:
+            relax_dir = protein_dir / protocol
             if relax_dir.exists():
-                for pdb_gz in sorted(relax_dir.glob(f"{protein_id}_r*.pdb.gz")):
+                for pdb_gz in sorted(relax_dir.glob(f"{pid}_r*.pdb.gz")):
                     rep = pdb_gz.stem.replace('.pdb', '').split('_r')[-1]
                     structures.append({
-                        'path': str(pdb_gz),
-                        'protein': protein_id,
-                        'category': 'Experimental',
-                        'subcategory': f'relaxed_{relax_type}',
-                        'model': f"r{rep}",
-                        'compressed': True
+                        'path': str(pdb_gz), 'protein': pid,
+                        'category': 'Experimental', 'subcategory': f'relaxed_{protocol}',
+                        'model': f"r{rep}", 'compressed': True
                     })
 
-        # AF/Boltz relaxed
+        # Relaxed structures (AF/Boltz)
         relax_base = protein_dir / "relax"
         if relax_base.exists():
-            for category_dir in ['AF', 'Boltz']:
-                cat_relax = relax_base / category_dir
-                if cat_relax.exists():
-                    for model_dir in sorted(cat_relax.iterdir()):
-                        if not model_dir.is_dir():
+            for cat_name in ['AF', 'Boltz']:
+                cat_dir = relax_base / cat_name
+                if not cat_dir.exists():
+                    continue
+                for model_dir in sorted(cat_dir.iterdir()):
+                    if not model_dir.is_dir():
+                        continue
+                    for protocol_dir in sorted(model_dir.iterdir()):
+                        if not protocol_dir.is_dir() or protocol_dir.name == 'log':
                             continue
-                        model_name = model_dir.name
-                        for protocol_dir in sorted(model_dir.iterdir()):
-                            if not protocol_dir.is_dir() or protocol_dir.name == 'log':
-                                continue
-                            relax_type = protocol_dir.name
-                            for pdb_gz in sorted(protocol_dir.glob("*.pdb.gz")):
-                                stem = pdb_gz.stem.replace('.pdb', '')
-                                category = 'AlphaFold' if category_dir == 'AF' else 'Boltz'
-                                rep = stem.split('_r')[-1] if '_r' in stem else stem
-                                structures.append({
-                                    'path': str(pdb_gz),
-                                    'protein': protein_id,
-                                    'category': category,
-                                    'subcategory': f'relaxed_{relax_type}',
-                                    'model': f"{model_name}_r{rep}",
-                                    'compressed': True
-                                })
+                        for pdb_gz in sorted(protocol_dir.glob("*.pdb.gz")):
+                            stem = pdb_gz.stem.replace('.pdb', '')
+                            rep = stem.split('_r')[-1] if '_r' in stem else stem
+                            structures.append({
+                                'path': str(pdb_gz), 'protein': pid,
+                                'category': 'AlphaFold' if cat_name == 'AF' else 'Boltz',
+                                'subcategory': f'relaxed_{protocol_dir.name}',
+                                'model': f"{model_dir.name}_r{rep}", 'compressed': True
+                            })
 
     return structures
 
 
 def parse_pdb(pdb_path: str) -> list:
-    """Parse PDB file and extract atom coordinates."""
+    """Parse ATOM/HETATM records from PDB file."""
     atoms = []
     try:
         with open(pdb_path, 'r') as f:
             for line in f:
-                if line.startswith('ATOM') or line.startswith('HETATM'):
-                    try:
-                        atom = {
-                            'record': line[:6].strip(),
-                            'serial': int(line[6:11]),
-                            'name': line[12:16].strip(),
-                            'altloc': line[16].strip(),
-                            'resname': line[17:20].strip(),
-                            'chain': line[21].strip(),
-                            'resseq': int(line[22:26]),
-                            'x': float(line[30:38]),
-                            'y': float(line[38:46]),
-                            'z': float(line[46:54]),
-                            'element': line[76:78].strip() if len(line) > 76 else ''
-                        }
-                        if not atom['element']:
-                            atom['element'] = atom['name'][0]
-                        atoms.append(atom)
-                    except (ValueError, IndexError):
-                        continue
+                if not (line.startswith('ATOM') or line.startswith('HETATM')):
+                    continue
+                try:
+                    atom = {
+                        'name': line[12:16].strip(),
+                        'resname': line[17:20].strip(),
+                        'chain': line[21].strip(),
+                        'resseq': int(line[22:26]),
+                        'x': float(line[30:38]),
+                        'y': float(line[38:46]),
+                        'z': float(line[46:54]),
+                        'element': line[76:78].strip() if len(line) > 76 else line[12:16].strip()[0]
+                    }
+                    atoms.append(atom)
+                except (ValueError, IndexError):
+                    continue
     except Exception:
         return []
     return atoms
 
 
-def distance(a1, a2) -> float:
-    """Calculate distance between two atoms."""
+def dist(a1, a2) -> float:
     return np.sqrt((a1['x']-a2['x'])**2 + (a1['y']-a2['y'])**2 + (a1['z']-a2['z'])**2)
 
 
 def angle(a1, a2, a3) -> float:
-    """Calculate angle between three atoms (a2 is vertex)."""
+    """Angle at a2 between a1-a2-a3."""
     v1 = np.array([a1['x']-a2['x'], a1['y']-a2['y'], a1['z']-a2['z']])
     v2 = np.array([a3['x']-a2['x'], a3['y']-a2['y'], a3['z']-a2['z']])
     n1, n2 = np.linalg.norm(v1), np.linalg.norm(v2)
     if n1 == 0 or n2 == 0:
         return 0.0
-    cos_angle = np.dot(v1, v2) / (n1 * n2)
-    cos_angle = np.clip(cos_angle, -1, 1)
-    return np.degrees(np.arccos(cos_angle))
+    cos_ang = np.clip(np.dot(v1, v2) / (n1 * n2), -1, 1)
+    return np.degrees(np.arccos(cos_ang))
 
 
 def dihedral(a1, a2, a3, a4) -> float:
-    """Calculate dihedral angle between four atoms."""
+    """Dihedral angle defined by four atoms."""
     b1 = np.array([a2['x']-a1['x'], a2['y']-a1['y'], a2['z']-a1['z']])
     b2 = np.array([a3['x']-a2['x'], a3['y']-a2['y'], a3['z']-a2['z']])
     b3 = np.array([a4['x']-a3['x'], a4['y']-a3['y'], a4['z']-a3['z']])
 
-    n1 = np.cross(b1, b2)
-    n2 = np.cross(b2, b3)
-
-    n1_norm = np.linalg.norm(n1)
-    n2_norm = np.linalg.norm(n2)
-    b2_norm = np.linalg.norm(b2)
+    n1, n2 = np.cross(b1, b2), np.cross(b2, b3)
+    n1_norm, n2_norm, b2_norm = np.linalg.norm(n1), np.linalg.norm(n2), np.linalg.norm(b2)
 
     if n1_norm == 0 or n2_norm == 0 or b2_norm == 0:
         return 0.0
 
     m1 = np.cross(n1, b2 / b2_norm)
-    x = np.dot(n1, n2)
-    y = np.dot(m1, n2)
-
-    return np.degrees(np.arctan2(y, x))
+    return np.degrees(np.arctan2(np.dot(m1, n2), np.dot(n1, n2)))
 
 
 def group_by_residue(atoms: list) -> dict:
-    """Group atoms by (chain, resseq, resname)."""
     residues = {}
     for atom in atoms:
         key = (atom['chain'], atom['resseq'], atom['resname'])
@@ -243,205 +204,141 @@ def group_by_residue(atoms: list) -> dict:
     return residues
 
 
-# =============================================================================
-# TEST FUNCTIONS - Return both pass/fail AND raw values
-# =============================================================================
-
-def test_structure_loaded(atoms: list) -> dict:
-    """Test 1: Can the structure be parsed?"""
-    n_atoms = len(atoms)
-    return {
-        'structure_loaded': n_atoms > 0,
-        'raw_n_atoms': n_atoms
-    }
+def test_structure_loaded(atoms):
+    n = len(atoms)
+    return {'structure_loaded': n > 0, 'raw_n_atoms': n}
 
 
-def test_valid_residues(atoms: list) -> dict:
-    """Test 2: Are all residues recognized amino acids?"""
+def test_valid_residues(atoms):
     residues = set(a['resname'] for a in atoms)
-    non_standard = residues - STANDARD_AA
-    n_total = len(residues)
-    n_valid = len(residues & STANDARD_AA)
+    non_std = residues - STANDARD_AA
     return {
-        'valid_residues': len(non_standard) == 0,
-        'raw_n_residue_types': n_total,
-        'raw_n_valid_residue_types': n_valid,
-        'raw_non_standard_residues': ','.join(sorted(non_standard)) if non_standard else ''
+        'valid_residues': len(non_std) == 0,
+        'raw_n_residue_types': len(residues),
+        'raw_n_valid_residue_types': len(residues & STANDARD_AA),
+        'raw_non_standard_residues': ','.join(sorted(non_std)) if non_std else ''
     }
 
 
-def test_backbone_connected(atoms: list) -> dict:
-    """Test 3: Is the backbone continuous?"""
+def test_backbone_connected(atoms):
     residues = {}
-    for atom in atoms:
-        key = (atom['chain'], atom['resseq'])
+    for a in atoms:
+        key = (a['chain'], a['resseq'])
         if key not in residues:
             residues[key] = {}
-        residues[key][atom['name']] = atom
+        residues[key][a['name']] = a
 
-    sorted_keys = sorted(residues.keys())
-    n_breaks = 0
-    max_break_dist = 0.0
+    keys = sorted(residues.keys())
+    n_breaks, max_break = 0, 0.0
 
-    for i in range(len(sorted_keys) - 1):
-        key1, key2 = sorted_keys[i], sorted_keys[i + 1]
-        if key1[0] != key2[0]:  # Different chains
+    for i in range(len(keys) - 1):
+        k1, k2 = keys[i], keys[i+1]
+        if k1[0] != k2[0]:
             continue
-
-        res1, res2 = residues[key1], residues[key2]
-        if 'C' in res1 and 'N' in res2:
-            d = distance(res1['C'], res2['N'])
-            if d > 2.0:  # Chain break threshold
+        r1, r2 = residues[k1], residues[k2]
+        if 'C' in r1 and 'N' in r2:
+            d = dist(r1['C'], r2['N'])
+            if d > 2.0:
                 n_breaks += 1
-                max_break_dist = max(max_break_dist, d)
+                max_break = max(max_break, d)
 
     return {
         'backbone_connected': n_breaks == 0,
         'raw_n_backbone_breaks': n_breaks,
-        'raw_max_break_distance': round(max_break_dist, 3)
+        'raw_max_break_distance': round(max_break, 3)
     }
 
 
-def test_bond_lengths(atoms: list) -> dict:
-    """Test 4: Are peptide bond lengths within tolerance?"""
+def test_bond_lengths(atoms):
     residues = {}
-    for atom in atoms:
-        key = (atom['chain'], atom['resseq'])
+    for a in atoms:
+        key = (a['chain'], a['resseq'])
         if key not in residues:
             residues[key] = {}
-        residues[key][atom['name']] = atom
+        residues[key][a['name']] = a
 
-    bond_lengths = []
-    n_outliers = 0
-    sorted_keys = sorted(residues.keys())
+    keys = sorted(residues.keys())
+    lengths, n_outliers = [], 0
 
-    for i in range(len(sorted_keys) - 1):
-        key1, key2 = sorted_keys[i], sorted_keys[i + 1]
-        if key1[0] != key2[0]:
+    for i in range(len(keys) - 1):
+        k1, k2 = keys[i], keys[i+1]
+        if k1[0] != k2[0] or k2[1] - k1[1] != 1:
             continue
-        if key2[1] - key1[1] != 1:
-            continue
-
-        res1, res2 = residues[key1], residues[key2]
-        if 'C' in res1 and 'N' in res2:
-            d = distance(res1['C'], res2['N'])
-            bond_lengths.append(d)
-            # Ideal C-N peptide bond: 1.33 Å, tolerance ±0.15 Å
+        r1, r2 = residues[k1], residues[k2]
+        if 'C' in r1 and 'N' in r2:
+            d = dist(r1['C'], r2['N'])
+            lengths.append(d)
             if d < 1.18 or d > 1.48:
                 n_outliers += 1
 
-    mean_len = np.mean(bond_lengths) if bond_lengths else 0
-    std_len = np.std(bond_lengths) if bond_lengths else 0
-
     return {
         'bond_lengths': n_outliers == 0,
-        'raw_n_peptide_bonds': len(bond_lengths),
+        'raw_n_peptide_bonds': len(lengths),
         'raw_n_bond_outliers': n_outliers,
-        'raw_mean_bond_length': round(mean_len, 4),
-        'raw_std_bond_length': round(std_len, 4)
+        'raw_mean_bond_length': round(np.mean(lengths), 4) if lengths else 0,
+        'raw_std_bond_length': round(np.std(lengths), 4) if lengths else 0
     }
 
 
-def test_bond_angles(atoms: list) -> dict:
-    """Test 5: Are backbone bond angles within tolerance?"""
+def test_bond_angles(atoms):
     residues = group_by_residue(atoms)
-    sorted_keys = sorted(residues.keys())
+    angles_list, n_outliers = [], 0
 
-    angles_list = []
-    n_outliers = 0
-
-    for key in sorted_keys:
-        res = residues[key]
-        # N-CA-C angle (ideal ~111°)
+    for res in residues.values():
         if all(a in res for a in ['N', 'CA', 'C']):
             ang = angle(res['N'], res['CA'], res['C'])
             angles_list.append(ang)
             if ang < 100 or ang > 120:
                 n_outliers += 1
 
-    mean_ang = np.mean(angles_list) if angles_list else 0
-    std_ang = np.std(angles_list) if angles_list else 0
-
     return {
         'bond_angles': n_outliers == 0,
         'raw_n_backbone_angles': len(angles_list),
         'raw_n_angle_outliers': n_outliers,
-        'raw_mean_backbone_angle': round(mean_ang, 2),
-        'raw_std_backbone_angle': round(std_ang, 2)
+        'raw_mean_backbone_angle': round(np.mean(angles_list), 2) if angles_list else 0,
+        'raw_std_backbone_angle': round(np.std(angles_list), 2) if angles_list else 0
     }
 
 
-def test_steric_clashes(atoms: list) -> dict:
-    """Test 6: Are there severe steric clashes?"""
-    vdw = {'C': 1.7, 'N': 1.55, 'O': 1.52, 'S': 1.8, 'H': 1.2}
-    clash_threshold = 0.5  # Å overlap for severe clash
-
+def test_steric_clashes(atoms):
     n_atoms = len(atoms)
-    n_clashes = 0
-    worst_clash = 0.0
+    n_clashes, worst = 0, 0.0
 
-    # Sample atoms if too many (O(n^2) is slow)
-    if n_atoms > 1000:
-        indices = np.random.choice(n_atoms, 1000, replace=False)
-        sample_atoms = [atoms[i] for i in indices]
-    else:
-        sample_atoms = atoms
+    sample = atoms if n_atoms <= 1000 else [atoms[i] for i in np.random.choice(n_atoms, 1000, replace=False)]
 
-    for i in range(len(sample_atoms)):
-        for j in range(i + 1, len(sample_atoms)):
-            a1, a2 = sample_atoms[i], sample_atoms[j]
-
-            # Skip same residue
-            if a1['chain'] == a2['chain'] and a1['resseq'] == a2['resseq']:
-                continue
-            # Skip adjacent residues
+    for i in range(len(sample)):
+        for j in range(i + 1, len(sample)):
+            a1, a2 = sample[i], sample[j]
             if a1['chain'] == a2['chain'] and abs(a1['resseq'] - a2['resseq']) <= 1:
                 continue
 
-            d = distance(a1, a2)
-            r1 = vdw.get(a1['element'], 1.7)
-            r2 = vdw.get(a2['element'], 1.7)
+            d = dist(a1, a2)
+            r1, r2 = VDW_RADII.get(a1['element'], 1.7), VDW_RADII.get(a2['element'], 1.7)
             overlap = r1 + r2 - d
 
-            if overlap > clash_threshold:
+            if overlap > 0.5:
                 n_clashes += 1
-                worst_clash = max(worst_clash, overlap)
+                worst = max(worst, overlap)
 
     return {
-        'steric_clashes': n_clashes < 5,  # Allow a few minor clashes
+        'steric_clashes': n_clashes < 5,
         'raw_n_clashes': n_clashes,
-        'raw_worst_clash': round(worst_clash, 3)
+        'raw_worst_clash': round(worst, 3)
     }
 
 
-def test_aromatic_flatness(atoms: list) -> dict:
-    """Test 7: Are aromatic rings planar?"""
+def test_aromatic_flatness(atoms):
     residues = group_by_residue(atoms)
-
-    n_aromatic = 0
-    n_nonplanar = 0
-    max_deviation = 0.0
+    n_aromatic, n_nonplanar, max_dev = 0, 0, 0.0
 
     for key, res in residues.items():
-        if key[2] not in AROMATIC_RESIDUES:
-            continue
-
-        # Get ring atoms based on residue type
-        if key[2] == 'PHE':
-            ring_atoms = ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ']
-        elif key[2] == 'TYR':
-            ring_atoms = ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ']
-        elif key[2] == 'TRP':
-            ring_atoms = ['CG', 'CD1', 'CD2', 'NE1', 'CE2', 'CE3', 'CZ2', 'CZ3', 'CH2']
-        elif key[2] == 'HIS':
-            ring_atoms = ['CG', 'ND1', 'CD2', 'CE1', 'NE2']
-        else:
+        if key[2] not in RING_ATOMS:
             continue
 
         coords = []
-        for atom_name in ring_atoms:
-            if atom_name in res:
-                a = res[atom_name]
+        for name in RING_ATOMS[key[2]]:
+            if name in res:
+                a = res[name]
                 coords.append([a['x'], a['y'], a['z']])
 
         if len(coords) < 4:
@@ -449,49 +346,38 @@ def test_aromatic_flatness(atoms: list) -> dict:
 
         n_aromatic += 1
         coords = np.array(coords)
-
-        # Fit plane and calculate RMSD
-        centroid = coords.mean(axis=0)
-        centered = coords - centroid
+        centered = coords - coords.mean(axis=0)
         _, _, vh = np.linalg.svd(centered)
-        normal = vh[2]
+        rmsd = np.sqrt(np.mean(np.dot(centered, vh[2])**2))
+        max_dev = max(max_dev, rmsd)
 
-        distances = np.abs(np.dot(centered, normal))
-        rmsd = np.sqrt(np.mean(distances**2))
-        max_deviation = max(max_deviation, rmsd)
-
-        if rmsd > 0.1:  # 0.1 Å threshold
+        if rmsd > 0.1:
             n_nonplanar += 1
 
     return {
         'aromatic_flatness': n_nonplanar == 0,
         'raw_n_aromatic_rings': n_aromatic,
         'raw_n_nonplanar_rings': n_nonplanar,
-        'raw_max_ring_deviation': round(max_deviation, 4)
+        'raw_max_ring_deviation': round(max_dev, 4)
     }
 
 
-def test_peptide_planarity(atoms: list) -> dict:
-    """Test 8: Are peptide bonds planar (omega angle)?"""
+def test_peptide_planarity(atoms):
     residues = group_by_residue(atoms)
-    sorted_keys = sorted(residues.keys())
+    keys = sorted(residues.keys())
 
-    n_omega = 0
-    n_cis = 0
-    n_trans = 0
-    n_twisted = 0
-    omega_values = []
+    n_omega, n_cis, n_trans, n_twisted = 0, 0, 0, 0
+    omega_vals = []
 
-    for i in range(len(sorted_keys) - 1):
-        key1, key2 = sorted_keys[i], sorted_keys[i + 1]
-        if key1[0] != key2[0]:
+    for i in range(len(keys) - 1):
+        k1, k2 = keys[i], keys[i+1]
+        if k1[0] != k2[0]:
             continue
 
-        res1, res2 = residues[key1], residues[key2]
-
-        if all(a in res1 for a in ['CA', 'C']) and all(a in res2 for a in ['N', 'CA']):
-            omega = dihedral(res1['CA'], res1['C'], res2['N'], res2['CA'])
-            omega_values.append(omega)
+        r1, r2 = residues[k1], residues[k2]
+        if all(a in r1 for a in ['CA', 'C']) and all(a in r2 for a in ['N', 'CA']):
+            omega = dihedral(r1['CA'], r1['C'], r2['N'], r2['CA'])
+            omega_vals.append(omega)
             n_omega += 1
 
             abs_omega = abs(omega)
@@ -508,64 +394,51 @@ def test_peptide_planarity(atoms: list) -> dict:
         'raw_n_cis': n_cis,
         'raw_n_trans': n_trans,
         'raw_n_twisted': n_twisted,
-        'raw_mean_abs_omega': round(np.mean(np.abs(omega_values)), 2) if omega_values else 0
+        'raw_mean_abs_omega': round(np.mean(np.abs(omega_vals)), 2) if omega_vals else 0
     }
 
 
-def test_chirality(atoms: list) -> dict:
-    """Test 9: Are amino acids L-configuration?"""
+def test_chirality(atoms):
     residues = group_by_residue(atoms)
-
-    n_checked = 0
-    n_d_amino = 0
+    n_checked, n_d = 0, 0
 
     for key, res in residues.items():
-        if key[2] == 'GLY':  # Glycine is achiral
+        if key[2] == 'GLY':
             continue
-
         if all(a in res for a in ['N', 'CA', 'C', 'CB']):
             n_checked += 1
-            chi = dihedral(res['N'], res['CA'], res['C'], res['CB'])
-            if chi < -30:  # D-amino acid
-                n_d_amino += 1
+            if dihedral(res['N'], res['CA'], res['C'], res['CB']) < -30:
+                n_d += 1
 
     return {
-        'chirality': n_d_amino == 0,
+        'chirality': n_d == 0,
         'raw_n_chiral_centers': n_checked,
-        'raw_n_d_amino_acids': n_d_amino
+        'raw_n_d_amino_acids': n_d
     }
 
 
-def test_complete_residues(atoms: list) -> dict:
-    """Test 10: Are all backbone atoms present?"""
+def test_complete_residues(atoms):
     residues = group_by_residue(atoms)
     backbone = ['N', 'CA', 'C', 'O']
 
-    n_residues = len(residues)
-    n_incomplete = 0
-    missing_atoms = 0
-
-    for key, res in residues.items():
-        missing = [a for a in backbone if a not in res]
-        if missing:
+    n_incomplete, missing = 0, 0
+    for res in residues.values():
+        m = sum(1 for a in backbone if a not in res)
+        if m > 0:
             n_incomplete += 1
-            missing_atoms += len(missing)
+            missing += m
 
     return {
         'complete_residues': n_incomplete == 0,
-        'raw_n_residues': n_residues,
+        'raw_n_residues': len(residues),
         'raw_n_incomplete_residues': n_incomplete,
-        'raw_n_missing_backbone_atoms': missing_atoms
+        'raw_n_missing_backbone_atoms': missing
     }
 
 
 def test_internal_energy(pdb_path: str, rosetta_bin: str) -> dict:
-    """Test 11: Rosetta internal energy score."""
     if not rosetta_bin:
-        return {
-            'internal_energy': None,
-            'raw_rosetta_score': None
-        }
+        return {'internal_energy': None, 'raw_rosetta_score': None}
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -574,58 +447,30 @@ def test_internal_energy(pdb_path: str, rosetta_bin: str) -> dict:
                 rosetta_bin,
                 '-in:file:s', str(pdb_path),
                 '-out:file:scorefile', str(score_file),
-                '-ignore_unrecognized_res',
-                '-mute', 'all'
+                '-ignore_unrecognized_res', '-mute', 'all'
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-
-            if result.returncode != 0:
-                return {
-                    'internal_energy': None,
-                    'raw_rosetta_score': None
-                }
+            subprocess.run(cmd, capture_output=True, timeout=120)
 
             if not score_file.exists():
-                return {
-                    'internal_energy': None,
-                    'raw_rosetta_score': None
-                }
+                return {'internal_energy': None, 'raw_rosetta_score': None}
 
-            content = score_file.read_text()
-            for line in content.split('\n'):
+            for line in score_file.read_text().split('\n'):
                 if line.startswith('SCORE:') and 'total_score' not in line:
                     parts = line.split()
                     if len(parts) > 1:
                         try:
                             score = float(parts[1])
-                            return {
-                                'internal_energy': score < 0,
-                                'raw_rosetta_score': round(score, 2)
-                            }
+                            return {'internal_energy': score < 0, 'raw_rosetta_score': round(score, 2)}
                         except ValueError:
                             pass
+    except (subprocess.TimeoutExpired, Exception):
+        pass
 
-            return {
-                'internal_energy': None,
-                'raw_rosetta_score': None
-            }
-    except subprocess.TimeoutExpired:
-        return {
-            'internal_energy': None,
-            'raw_rosetta_score': None
-        }
-    except Exception:
-        return {
-            'internal_energy': None,
-            'raw_rosetta_score': None
-        }
+    return {'internal_energy': None, 'raw_rosetta_score': None}
 
 
 def decompress_pdb(gz_path: str) -> str:
-    """Decompress gzipped PDB file to unique temp location."""
-    import uuid
-    unique_id = uuid.uuid4().hex[:8]
-    pdb_name = Path(gz_path).stem + f'_{unique_id}'
+    pdb_name = Path(gz_path).stem + f'_{uuid.uuid4().hex[:8]}'
     pdb_path = TEMP_DIR / pdb_name
     with gzip.open(gz_path, 'rb') as f_in:
         with open(pdb_path, 'wb') as f_out:
@@ -634,7 +479,6 @@ def decompress_pdb(gz_path: str) -> str:
 
 
 def validate_structure(args) -> dict:
-    """Validate a single structure. Returns dict with all results."""
     struct, rosetta_bin = args
 
     result = {
@@ -644,7 +488,6 @@ def validate_structure(args) -> dict:
         'model': struct.get('model', 'exp'),
     }
 
-    # Get PDB path (decompress if needed)
     pdb_path = struct['path']
     temp_pdb = None
 
@@ -655,37 +498,21 @@ def validate_structure(args) -> dict:
 
         atoms = parse_pdb(pdb_path)
 
-        # Run all tests
-        tests = [
-            test_structure_loaded(atoms),
-            test_valid_residues(atoms),
-            test_backbone_connected(atoms),
-            test_bond_lengths(atoms),
-            test_bond_angles(atoms),
-            test_steric_clashes(atoms),
-            test_aromatic_flatness(atoms),
-            test_peptide_planarity(atoms),
-            test_chirality(atoms),
-            test_complete_residues(atoms),
-        ]
+        for test_fn in [test_structure_loaded, test_valid_residues, test_backbone_connected,
+                        test_bond_lengths, test_bond_angles, test_steric_clashes,
+                        test_aromatic_flatness, test_peptide_planarity, test_chirality,
+                        test_complete_residues]:
+            result.update(test_fn(atoms))
 
-        for t in tests:
-            result.update(t)
-
-        # Rosetta energy (optional)
         if rosetta_bin:
-            energy_result = test_internal_energy(pdb_path, rosetta_bin)
-            result.update(energy_result)
+            result.update(test_internal_energy(pdb_path, rosetta_bin))
         else:
             result['internal_energy'] = None
             result['raw_rosetta_score'] = None
 
-        # Calculate all_pass and n_pass
-        pass_cols = [
-            'structure_loaded', 'valid_residues', 'backbone_connected',
-            'bond_lengths', 'bond_angles', 'steric_clashes',
-            'aromatic_flatness', 'peptide_planarity', 'chirality', 'complete_residues'
-        ]
+        pass_cols = ['structure_loaded', 'valid_residues', 'backbone_connected', 'bond_lengths',
+                     'bond_angles', 'steric_clashes', 'aromatic_flatness', 'peptide_planarity',
+                     'chirality', 'complete_residues']
         n_pass = sum(1 for c in pass_cols if result.get(c) is True)
         all_pass = all(result.get(c) is True for c in pass_cols)
 
@@ -704,7 +531,6 @@ def validate_structure(args) -> dict:
         result['n_pass'] = 0
 
     finally:
-        # Clean up temp file
         if temp_pdb and Path(temp_pdb).exists():
             try:
                 Path(temp_pdb).unlink()
@@ -714,36 +540,7 @@ def validate_structure(args) -> dict:
     return result
 
 
-def get_pass_cols():
-    return ['protein', 'category', 'subcategory', 'model',
-            'structure_loaded', 'valid_residues', 'backbone_connected',
-            'bond_lengths', 'bond_angles', 'steric_clashes',
-            'aromatic_flatness', 'peptide_planarity', 'chirality',
-            'complete_residues', 'internal_energy', 'all_pass', 'n_pass']
-
-
-def get_raw_cols(df):
-    return ['protein', 'category', 'subcategory', 'model'] + \
-           [c for c in df.columns if c.startswith('raw_')]
-
-
-def save_results(results: list, output_name: str, raw_name: str):
-    """Save pass/fail results and raw values to separate files."""
-    df = pd.DataFrame(results)
-
-    pass_cols = [c for c in get_pass_cols() if c in df.columns]
-    pass_df = df[pass_cols]
-    pass_df.to_csv(OUTPUT_DIR / output_name, index=False)
-
-    raw_cols = [c for c in get_raw_cols(df) if c in df.columns]
-    raw_df = df[raw_cols]
-    raw_df.to_csv(OUTPUT_DIR / raw_name, index=False)
-
-    return pass_df, raw_df
-
-
 def sort_results(df: pd.DataFrame) -> pd.DataFrame:
-    """Sort results in logical order: Experimental > AlphaFold > Boltz, original/raw > relaxed."""
     cat_order = {'Experimental': 0, 'AlphaFold': 1, 'Boltz': 2}
     sub_order = {
         'original': 0, 'raw': 1,
@@ -752,48 +549,34 @@ def sort_results(df: pd.DataFrame) -> pd.DataFrame:
         'relaxed_normal_beta': 6, 'relaxed_normal_ref15': 7
     }
     df = df.copy()
-    df['_cat_order'] = df['category'].map(cat_order).fillna(99)
-    df['_sub_order'] = df['subcategory'].map(sub_order).fillna(99)
-    df = df.sort_values(['_cat_order', '_sub_order', 'model'])
-    df = df.drop(columns=['_cat_order', '_sub_order'])
+    df['_cat'] = df['category'].map(cat_order).fillna(99)
+    df['_sub'] = df['subcategory'].map(sub_order).fillna(99)
+    df = df.sort_values(['_cat', '_sub', 'model']).drop(columns=['_cat', '_sub'])
     return df.reset_index(drop=True)
 
 
-def save_per_protein_incremental(results: list, protein: str):
-    """Save results for a single protein to proteins/{protein}/analysis/."""
-    df = pd.DataFrame(results)
-    df = sort_results(df)
+def save_per_protein(results: list, protein: str):
+    df = sort_results(pd.DataFrame(results))
+    out_dir = PROTEINS_DIR / protein / "analysis"
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Create analysis directory
-    analysis_dir = PROTEINS_DIR / protein / "analysis"
-    analysis_dir.mkdir(parents=True, exist_ok=True)
+    pass_cols = ['category', 'subcategory', 'model', 'structure_loaded', 'valid_residues',
+                 'backbone_connected', 'bond_lengths', 'bond_angles', 'steric_clashes',
+                 'aromatic_flatness', 'peptide_planarity', 'chirality', 'complete_residues',
+                 'internal_energy', 'all_pass', 'n_pass']
+    df[[c for c in pass_cols if c in df.columns]].to_csv(out_dir / "posebusters_results.csv", index=False)
 
-    # Pass/fail results
-    pass_cols = ['category', 'subcategory', 'model',
-                 'structure_loaded', 'valid_residues', 'backbone_connected',
-                 'bond_lengths', 'bond_angles', 'steric_clashes',
-                 'aromatic_flatness', 'peptide_planarity', 'chirality',
-                 'complete_residues', 'internal_energy', 'all_pass', 'n_pass']
-    pass_cols = [c for c in pass_cols if c in df.columns]
-    pass_df = df[pass_cols]
-    pass_df.to_csv(analysis_dir / "posebusters_results.csv", index=False)
-
-    # Raw values
-    raw_cols = ['category', 'subcategory', 'model'] + \
-               [c for c in df.columns if c.startswith('raw_')]
-    raw_cols = [c for c in raw_cols if c in df.columns]
-    raw_df = df[raw_cols]
-    raw_df.to_csv(analysis_dir / "posebusters_raw.csv", index=False)
+    raw_cols = ['category', 'subcategory', 'model'] + [c for c in df.columns if c.startswith('raw_')]
+    df[[c for c in raw_cols if c in df.columns]].to_csv(out_dir / "posebusters_raw.csv", index=False)
 
     return len(results)
 
 
 def main():
-    parser = argparse.ArgumentParser(description='PoseBusters for proteins')
-    parser.add_argument('--no-energy', action='store_true', help='Skip Rosetta energy calculation')
-    parser.add_argument('--limit', type=int, help='Limit number of structures')
-    parser.add_argument('-j', '--workers', type=int, default=os.cpu_count(), help='Number of parallel workers')
-    parser.add_argument('--suffix', type=str, default='', help='Suffix for output files')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--no-energy', action='store_true')
+    parser.add_argument('--limit', type=int)
+    parser.add_argument('-j', '--workers', type=int, default=os.cpu_count())
     args = parser.parse_args()
 
     print("=" * 70)
@@ -802,104 +585,72 @@ def main():
     print(f"\nStart: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Workers: {args.workers}")
 
-    # Find Rosetta
     rosetta_bin = None if args.no_energy else find_rosetta()
-    if rosetta_bin:
-        print(f"Rosetta: {rosetta_bin}")
-    else:
-        print("(Rosetta energy calculation disabled)")
+    print(f"Rosetta: {rosetta_bin}" if rosetta_bin else "(Rosetta disabled)")
 
-    # Find structures
     structures = find_structures()
-    print(f"Found {len(structures)} structures")
-
     if args.limit:
         structures = structures[:args.limit]
-        print(f"Limited to {len(structures)} structures")
+    print(f"Found {len(structures)} structures")
 
-    # Group structures by protein for incremental saving
     by_protein = {}
     for s in structures:
-        prot = s['protein']
-        if prot not in by_protein:
-            by_protein[prot] = []
-        by_protein[prot].append(s)
+        by_protein.setdefault(s['protein'], []).append(s)
 
     proteins = sorted(by_protein.keys())
-    print(f"Processing {len(proteins)} proteins incrementally")
+    print(f"Processing {len(proteins)} proteins")
 
     all_results = []
-    completed_proteins = 0
 
-    # Process protein by protein
-    for protein in proteins:
-        protein_structures = by_protein[protein]
-        tasks = [(s, rosetta_bin) for s in protein_structures]
-
+    for idx, protein in enumerate(proteins, 1):
+        tasks = [(s, rosetta_bin) for s in by_protein[protein]]
         protein_results = []
+
         with ProcessPoolExecutor(max_workers=args.workers) as executor:
-            futures = {executor.submit(validate_structure, t): t[0] for t in tasks}
+            futures = {executor.submit(validate_structure, t): t for t in tasks}
             for future in tqdm(as_completed(futures), total=len(futures),
-                              desc=f"{protein} ({completed_proteins+1}/{len(proteins)})",
-                              leave=False):
-                result = future.result()
-                protein_results.append(result)
-                all_results.append(result)
+                              desc=f"{protein} ({idx}/{len(proteins)})", leave=False):
+                protein_results.append(future.result())
+                all_results.append(future.result())
 
-        # Save per-protein results immediately
-        n_saved = save_per_protein_incremental(protein_results, protein)
-        completed_proteins += 1
-        print(f"[{completed_proteins}/{len(proteins)}] {protein}: {n_saved} structures saved to proteins/{protein}/analysis/", flush=True)
+        n = save_per_protein(protein_results, protein)
+        print(f"[{idx}/{len(proteins)}] {protein}: {n} structures saved", flush=True)
 
-        # Also append to compiled results file (incremental)
-        suffix_str = f'_{args.suffix}' if args.suffix else ''
-        compiled_path = OUTPUT_DIR / f"posebusters_results{suffix_str}.csv"
-        compiled_raw_path = OUTPUT_DIR / f"posebusters_raw{suffix_str}.csv"
+        # Append to compiled
+        df = sort_results(pd.DataFrame(protein_results))
+        pass_cols = ['protein', 'category', 'subcategory', 'model', 'structure_loaded', 'valid_residues',
+                     'backbone_connected', 'bond_lengths', 'bond_angles', 'steric_clashes',
+                     'aromatic_flatness', 'peptide_planarity', 'chirality', 'complete_residues',
+                     'internal_energy', 'all_pass', 'n_pass']
+        raw_cols = ['protein', 'category', 'subcategory', 'model'] + [c for c in df.columns if c.startswith('raw_')]
 
-        df = pd.DataFrame(protein_results)
-        df = sort_results(df)
-        pass_cols = [c for c in get_pass_cols() if c in df.columns]
-        raw_cols = [c for c in get_raw_cols(df) if c in df.columns]
-
-        # Append to compiled files
-        write_header = not compiled_path.exists()
-        df[pass_cols].to_csv(compiled_path, mode='a', header=write_header, index=False)
-        df[raw_cols].to_csv(compiled_raw_path, mode='a', header=write_header, index=False)
+        compiled = OUTPUT_DIR / "posebusters_results.csv"
+        compiled_raw = OUTPUT_DIR / "posebusters_raw.csv"
+        header = not compiled.exists()
+        df[[c for c in pass_cols if c in df.columns]].to_csv(compiled, mode='a', header=header, index=False)
+        df[[c for c in raw_cols if c in df.columns]].to_csv(compiled_raw, mode='a', header=header, index=False)
 
     # Summary
     print("\n" + "=" * 70)
-    print("SUMMARY")
-    print("=" * 70)
+    df = pd.DataFrame(all_results)
+    print(f"Total: {len(df)} structures")
+    print(f"All pass: {df['all_pass'].sum()} ({100*df['all_pass'].mean():.1f}%)")
 
-    pass_df = pd.DataFrame(all_results)
-    print(f"\nTotal structures: {len(all_results)}")
-    print(f"All tests pass: {pass_df['all_pass'].sum()} ({100*pass_df['all_pass'].mean():.1f}%)")
-
-    print("\nBy Category:")
+    print("\nBy category:")
     for cat in ['Experimental', 'AlphaFold', 'Boltz']:
-        cat_df = pass_df[pass_df['category'] == cat]
-        if len(cat_df) > 0:
-            pct = 100 * cat_df['all_pass'].sum() / len(cat_df)
-            print(f"  {cat}: {cat_df['all_pass'].sum()}/{len(cat_df)} pass ({pct:.1f}%)")
+        sub = df[df['category'] == cat]
+        if len(sub):
+            print(f"  {cat}: {sub['all_pass'].sum()}/{len(sub)} ({100*sub['all_pass'].mean():.1f}%)")
 
-    print("\nIndividual Test Pass Rates:")
-    test_cols = ['structure_loaded', 'valid_residues', 'backbone_connected',
-                 'bond_lengths', 'bond_angles', 'steric_clashes',
-                 'aromatic_flatness', 'peptide_planarity', 'chirality', 'complete_residues']
-    for col in test_cols:
-        if col in pass_df.columns:
-            pct = 100 * pass_df[col].sum() / len(pass_df)
-            print(f"  {col}: {pct:.1f}%")
+    print("\nTest pass rates:")
+    for col in ['structure_loaded', 'valid_residues', 'backbone_connected', 'bond_lengths',
+                'bond_angles', 'steric_clashes', 'aromatic_flatness', 'peptide_planarity',
+                'chirality', 'complete_residues', 'internal_energy']:
+        if col in df.columns:
+            valid = df[col].notna()
+            if valid.any():
+                print(f"  {col}: {100*df.loc[valid, col].mean():.1f}%")
 
-    if 'internal_energy' in pass_df.columns:
-        valid = pass_df['internal_energy'].notna()
-        if valid.any():
-            pct = 100 * pass_df.loc[valid, 'internal_energy'].sum() / valid.sum()
-            print(f"  internal_energy: {pct:.1f}%")
-
-    print(f"\nResults saved to:")
-    print(f"  Per-protein: proteins/{{PROTEIN}}/analysis/posebusters_{{results,raw}}.csv")
-    print(f"  Compiled: {OUTPUT_DIR}/posebusters_{{results,raw}}.csv")
     print(f"\nEnd: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 
