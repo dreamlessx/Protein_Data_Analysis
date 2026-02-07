@@ -1,7 +1,6 @@
-# Protein Structure Validation Analysis
-# Vanderbilt Project Dependencies
+# Protein Structure Validation Pipeline
 
-# Core data manipulation
+# Core
 pandas>=2.0.0
 numpy>=1.24.0
 
