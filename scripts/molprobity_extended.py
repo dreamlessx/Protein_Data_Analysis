@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 Extended MolProbity geometry metrics via Python API.
-Adds C-beta deviation statistics and omega angle distributions.
+Adds C-beta deviation, omega distributions, and bond/angle RMSZ.
 """
 
 import os
 import gzip
 import tempfile
+import math
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -22,9 +23,67 @@ WORKERS = 12
 RELAX_PROTOCOLS = ['cartesian_beta', 'cartesian_ref15', 'dualspace_beta',
                    'dualspace_ref15', 'normal_beta', 'normal_ref15']
 
+# Engh & Huber ideal geometry values (used by wwPDB)
+IDEAL_BONDS = {
+    ('N', 'CA'): (1.458, 0.019),
+    ('CA', 'C'): (1.525, 0.021),
+    ('C', 'O'): (1.231, 0.020),
+    ('CA', 'CB'): (1.530, 0.020),
+}
+
+IDEAL_ANGLES = {
+    ('N', 'CA', 'C'): (111.2, 2.8),
+    ('CA', 'C', 'O'): (120.8, 1.7),
+    ('N', 'CA', 'CB'): (110.5, 1.7),
+    ('CB', 'CA', 'C'): (110.1, 1.9),
+}
+
+
+def calc_angle(a1, a2, a3):
+    """Calculate angle between three atoms in degrees."""
+    v1 = np.array([a1.xyz[i] - a2.xyz[i] for i in range(3)])
+    v2 = np.array([a3.xyz[i] - a2.xyz[i] for i in range(3)])
+    cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
+    return math.degrees(math.acos(np.clip(cos_angle, -1, 1)))
+
+
+def get_bond_angle_rmsz(hierarchy):
+    """Calculate bond and angle RMSZ using Engh & Huber values."""
+    bond_zs = []
+    angle_zs = []
+
+    for model in hierarchy.models():
+        for chain in model.chains():
+            for rg in chain.residue_groups():
+                for conf in rg.conformers():
+                    for res in conf.residues():
+                        atoms = {a.name.strip(): a for a in res.atoms()}
+
+                        for (a1, a2), (ideal, esd) in IDEAL_BONDS.items():
+                            if a1 in atoms and a2 in atoms:
+                                dist = atoms[a1].distance(atoms[a2])
+                                bond_zs.append((dist - ideal) / esd)
+
+                        for (a1, a2, a3), (ideal, esd) in IDEAL_ANGLES.items():
+                            if a1 in atoms and a2 in atoms and a3 in atoms:
+                                angle = calc_angle(atoms[a1], atoms[a2], atoms[a3])
+                                angle_zs.append((angle - ideal) / esd)
+
+    out = {}
+    if bond_zs:
+        out['bond_rmsz'] = round(math.sqrt(sum(z**2 for z in bond_zs) / len(bond_zs)), 3)
+        out['bond_outliers'] = sum(1 for z in bond_zs if abs(z) > 4)
+        out['bond_n'] = len(bond_zs)
+    if angle_zs:
+        out['angle_rmsz'] = round(math.sqrt(sum(z**2 for z in angle_zs) / len(angle_zs)), 3)
+        out['angle_outliers'] = sum(1 for z in angle_zs if abs(z) > 4)
+        out['angle_n'] = len(angle_zs)
+
+    return out
+
 
 def get_metrics(pdb_path):
-    """Extract C-beta and omega metrics via mmtbx."""
+    """Extract extended geometry metrics."""
     from mmtbx.validation import cbetadev, omegalyze
     from iotbx import pdb
 
@@ -54,6 +113,9 @@ def get_metrics(pdb_path):
             out['omega_trans'] = sum(1 for o in vals if abs(abs(o) - 180) < 30)
             out['omega_cis'] = sum(1 for o in vals if abs(o) < 30)
 
+        # Bond/angle RMSZ
+        out.update(get_bond_angle_rmsz(hierarchy))
+
     except Exception as e:
         out['error'] = str(e)[:50]
 
@@ -69,7 +131,7 @@ def process(info):
     tmp = None
     try:
         if gz:
-            tmp = tempfile.NamedTemporaryFile(suffix='.pdb', delete=False)
+            tmp = tempfile.NamedTemporaryFile(suffix='.pdb', delete=False, mode='wb')
             with gzip.open(path, 'rb') as f:
                 tmp.write(f.read())
             tmp.close()
@@ -157,13 +219,21 @@ def main():
     df.to_csv(out, index=False)
     print(f"\nSaved: {out}")
 
-    # quick summary
+    # summary
+    print("\n=== Summary (raw/original only) ===")
     for cat in ['Experimental', 'AlphaFold', 'Boltz']:
         sub = df[(df['category'] == cat) & (df['subcategory'].isin(['original', 'raw']))]
-        if len(sub) and 'cbeta_mean' in sub.columns and sub['cbeta_mean'].notna().any():
-            print(f"{cat}: cbeta_mean={sub['cbeta_mean'].mean():.4f}A")
+        if len(sub) == 0:
+            continue
+        print(f"\n{cat} (n={len(sub)}):")
+        if 'cbeta_mean' in sub.columns and sub['cbeta_mean'].notna().any():
+            print(f"  C-beta mean: {sub['cbeta_mean'].mean():.4f} A")
+        if 'bond_rmsz' in sub.columns and sub['bond_rmsz'].notna().any():
+            print(f"  Bond RMSZ: {sub['bond_rmsz'].mean():.3f}")
+        if 'angle_rmsz' in sub.columns and sub['angle_rmsz'].notna().any():
+            print(f"  Angle RMSZ: {sub['angle_rmsz'].mean():.3f}")
 
-    print(f"Done: {datetime.now().strftime('%H:%M:%S')}")
+    print(f"\nDone: {datetime.now().strftime('%H:%M:%S')}")
 
 
 if __name__ == "__main__":
