@@ -1,9 +1,4 @@
-# Large protein structure files
-proteins/
-*.pdb
-*.pdb.gz
-*.cif
-*.cif.gz
+# Temporary files
 
 # Temporary files
 temp/
