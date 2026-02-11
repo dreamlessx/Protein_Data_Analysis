@@ -26,26 +26,113 @@ for protein_dir in sorted(PROTEINS_DIR.iterdir()):
         pb_dfs.append(df)
 pb_df = pd.concat(pb_dfs, ignore_index=True) if pb_dfs else pd.DataFrame()
 
-# MolProbity metrics (lower = better for all)
+# Load PoseBusters pass/fail from per-protein directories
+pb_pf_dfs = []
+for protein_dir in sorted(PROTEINS_DIR.iterdir()):
+    if not protein_dir.is_dir():
+        continue
+    pb_file = protein_dir / "analysis" / "posebusters_results.csv"
+    if pb_file.exists():
+        df = pd.read_csv(pb_file)
+        df['protein'] = protein_dir.name
+        pb_pf_dfs.append(df)
+pb_pf_df = pd.concat(pb_pf_dfs, ignore_index=True) if pb_pf_dfs else pd.DataFrame()
+
+# MolProbity metrics - ALL 36 columns
 MP_METRICS = [
-    ('clashscore', 'Clashscore', True),  # (column, display_name, lower_is_better)
+    # Core metrics
+    ('clashscore', 'Clashscore', True),
     ('molprobity_score', 'MolProbity Score', True),
-    ('rama_outliers', 'Ramachandran Outliers (%)', True),
-    ('rota_outliers', 'Rotamer Outliers (%)', True),
+    ('clash_count', 'Clash Count (raw)', True),
+    ('atom_count', 'Atom Count', False),
+    # Ramachandran
+    ('rama_favored', 'Rama Favored (count)', False),
+    ('rama_allowed', 'Rama Allowed (count)', False),
+    ('rama_outliers', 'Rama Outliers (count)', True),
+    ('rama_total', 'Rama Total', False),
+    ('rama_favored_pct', 'Rama Favored %', False),
+    ('rama_outliers_pct', 'Rama Outliers %', True),
+    # Rotamers
+    ('rota_favored', 'Rotamer Favored (count)', False),
+    ('rota_outliers', 'Rotamer Outliers (count)', True),
+    ('rota_total', 'Rotamer Total', False),
+    ('rota_favored_pct', 'Rotamer Favored %', False),
+    ('rota_outliers_pct', 'Rotamer Outliers %', True),
+    # C-beta deviations
+    ('cbeta_deviations', 'C-beta Deviations', True),
+    ('cbeta_mean', 'C-beta Mean Dev', True),
+    ('cbeta_max', 'C-beta Max Dev', True),
+    ('cbeta_std', 'C-beta Std Dev', True),
+    ('cbeta_rmsz', 'C-beta RMSZ', True),
+    ('cbeta_n', 'C-beta N', False),
+    ('cbeta_outliers', 'C-beta Outliers', True),
+    # Omega angles
+    ('omega_cis_proline', 'Omega Cis-Pro', False),
+    ('omega_cis_general', 'Omega Cis-General', True),
+    ('omega_twisted', 'Omega Twisted', True),
+    ('omega_mean', 'Omega Mean', False),
+    ('omega_std', 'Omega Std', True),
+    ('omega_min', 'Omega Min', False),
+    ('omega_max', 'Omega Max', False),
+    ('omega_trans', 'Omega Trans', False),
+    ('omega_cis', 'Omega Cis', False),
+    # Bonds and angles
     ('bond_rmsz', 'Bond Length RMSZ', True),
+    ('bond_outliers', 'Bond Outliers', True),
+    ('bond_n', 'Bond N', False),
     ('angle_rmsz', 'Bond Angle RMSZ', True),
+    ('angle_outliers', 'Angle Outliers', True),
+    ('angle_n', 'Angle N', False),
 ]
 
-# PoseBusters continuous metrics
-PB_METRICS = [
-    ('raw_n_clashes', 'Steric Clashes (count)', True),
-    ('raw_worst_clash', 'Worst Clash Overlap (A)', True),
-    ('raw_n_bond_outliers', 'Bond Length Outliers', True),
-    ('raw_mean_bond_length', 'Mean Peptide Bond (A)', False),  # ~1.33 is ideal
+# PoseBusters RAW continuous metrics - ALL columns
+PB_RAW_METRICS = [
+    ('raw_n_atoms', 'Atom Count', False),
+    ('raw_n_residue_types', 'Residue Types', False),
+    ('raw_n_valid_residue_types', 'Valid Residue Types', False),
+    ('raw_n_backbone_breaks', 'Backbone Breaks', True),
+    ('raw_max_break_distance', 'Max Break Distance (A)', True),
+    ('raw_n_peptide_bonds', 'Peptide Bonds', False),
+    ('raw_n_bond_outliers', 'Bond Outliers', True),
+    ('raw_mean_bond_length', 'Mean Bond Length (A)', False),
+    ('raw_std_bond_length', 'Std Bond Length', True),
+    ('raw_n_backbone_angles', 'Backbone Angles', False),
     ('raw_n_angle_outliers', 'Angle Outliers', True),
-    ('raw_mean_backbone_angle', 'Mean N-CA-C Angle', False),  # ~111 is ideal
-    ('raw_n_twisted', 'Twisted Omega Count', True),
-    ('raw_rosetta_score', 'Rosetta Energy (REU)', True),
+    ('raw_mean_backbone_angle', 'Mean N-CA-C Angle', False),
+    ('raw_std_backbone_angle', 'Std N-CA-C Angle', True),
+    ('raw_n_clashes', 'Steric Clashes', True),
+    ('raw_worst_clash', 'Worst Clash (A)', True),
+    ('raw_n_aromatic_rings', 'Aromatic Rings', False),
+    ('raw_n_nonplanar_rings', 'Non-planar Rings', True),
+    ('raw_max_ring_deviation', 'Max Ring Deviation', True),
+    ('raw_n_omega_angles', 'Omega Angles', False),
+    ('raw_n_cis', 'Cis Peptides', False),
+    ('raw_n_trans', 'Trans Peptides', False),
+    ('raw_n_twisted', 'Twisted Peptides', True),
+    ('raw_mean_abs_omega', 'Mean |Omega|', False),
+    ('raw_n_chiral_centers', 'Chiral Centers', False),
+    ('raw_n_d_amino_acids', 'D-Amino Acids', True),
+    ('raw_n_residues', 'Residues', False),
+    ('raw_n_incomplete_residues', 'Incomplete Residues', True),
+    ('raw_n_missing_backbone_atoms', 'Missing BB Atoms', True),
+    ('raw_rosetta_score', 'Rosetta Energy', True),
+]
+
+# PoseBusters PASS/FAIL metrics (as 0/1)
+PB_PASSFAIL_METRICS = [
+    ('structure_loaded', 'Structure Loaded', False),  # higher = better (pass)
+    ('valid_residues', 'Valid Residues', False),
+    ('backbone_connected', 'Backbone Connected', False),
+    ('bond_lengths', 'Bond Lengths OK', False),
+    ('bond_angles', 'Bond Angles OK', False),
+    ('steric_clashes', 'No Steric Clashes', False),
+    ('aromatic_flatness', 'Aromatic Flatness', False),
+    ('peptide_planarity', 'Peptide Planarity', False),
+    ('chirality', 'Chirality OK', False),
+    ('complete_residues', 'Complete Residues', False),
+    ('internal_energy', 'Internal Energy OK', False),
+    ('all_pass', 'All Tests Pass', False),
+    ('n_pass', 'Tests Passed (count)', False),
 ]
 
 
@@ -264,9 +351,9 @@ def main():
         print(f"  {name}: r={r:.3f}, p={p:.6f} -> {filename}")
         results.append({'metric': name, 'source': 'MolProbity', 'r': r, 'p': p, 'lower_better': lower_better})
 
-    # PoseBusters metrics
-    print("\n--- PoseBusters Continuous Metrics ---")
-    for col, name, lower_better in PB_METRICS:
+    # PoseBusters RAW metrics
+    print("\n--- PoseBusters RAW Continuous Metrics ---")
+    for col, name, lower_better in PB_RAW_METRICS:
         if col not in pb_df.columns:
             print(f"  {name}: column not found, skipping")
             continue
@@ -276,10 +363,27 @@ def main():
             print(f"  {name}: no data")
             continue
 
-        filename = f'corr_pb_{col.replace("raw_", "")}.png'
+        filename = f'corr_pbraw_{col.replace("raw_", "")}.png'
         r, p = plot_correlation(data, name, lower_better, filename)
         print(f"  {name}: r={r:.3f}, p={p:.6f} -> {filename}")
-        results.append({'metric': name, 'source': 'PoseBusters', 'r': r, 'p': p, 'lower_better': lower_better})
+        results.append({'metric': name, 'source': 'PB-Raw', 'r': r, 'p': p, 'lower_better': lower_better})
+
+    # PoseBusters PASS/FAIL metrics
+    print("\n--- PoseBusters Pass/Fail Metrics ---")
+    for col, name, lower_better in PB_PASSFAIL_METRICS:
+        if col not in pb_pf_df.columns:
+            print(f"  {name}: column not found, skipping")
+            continue
+
+        data = collect_metric_data(pb_pf_df, col, is_molprobity=False)
+        if len(data) == 0:
+            print(f"  {name}: no data")
+            continue
+
+        filename = f'corr_pbpf_{col}.png'
+        r, p = plot_correlation(data, name, lower_better, filename)
+        print(f"  {name}: r={r:.3f}, p={p:.6f} -> {filename}")
+        results.append({'metric': name, 'source': 'PB-PassFail', 'r': r, 'p': p, 'lower_better': lower_better})
 
     # Summary table
     print("\n" + "=" * 70)
