@@ -25,7 +25,10 @@ for category in ['Experimental', 'AlphaFold', 'Boltz']:
             base_clash = baseline[baseline['protein'] == protein]['clashscore'].mean()
             rel_data = relaxed[relaxed['protein'] == protein]['clashscore']
             rel_clash = rel_data.mean()
-            rel_std = rel_data.std()
+            change = rel_clash - base_clash
+            # Range: min and max change across replicates
+            change_min = rel_data.min() - base_clash
+            change_max = rel_data.max() - base_clash
             if pd.notna(base_clash) and pd.notna(rel_clash):
                 data.append({
                     'protein': protein,
@@ -33,9 +36,9 @@ for category in ['Experimental', 'AlphaFold', 'Boltz']:
                     'af_type': None,
                     'initial_clashscore': base_clash,
                     'final_clashscore': rel_clash,
-                    'final_std': rel_std,
-                    'change': rel_clash - base_clash,
-                    'change_std': rel_std,
+                    'change': change,
+                    'change_lo': change - change_min,  # error bar down
+                    'change_hi': change_max - change,  # error bar up
                     'improved': rel_clash < base_clash
                 })
     elif category == 'AlphaFold':
@@ -47,33 +50,41 @@ for category in ['Experimental', 'AlphaFold', 'Boltz']:
             base_r0 = baseline[(baseline['protein'] == protein) & (baseline['model'] == 'ranked_0')]
             rel_r0 = relaxed[(relaxed['protein'] == protein) & (relaxed['model'].str.startswith('ranked_0'))]
             if len(base_r0) and len(rel_r0):
-                rel_std = rel_r0['clashscore'].std()
+                base_val = base_r0['clashscore'].mean()
+                rel_mean = rel_r0['clashscore'].mean()
+                change = rel_mean - base_val
+                change_min = rel_r0['clashscore'].min() - base_val
+                change_max = rel_r0['clashscore'].max() - base_val
                 data.append({
                     'protein': protein,
                     'category': category,
                     'af_type': 'ranked_0 (AMBER)',
-                    'initial_clashscore': base_r0['clashscore'].mean(),
-                    'final_clashscore': rel_r0['clashscore'].mean(),
-                    'final_std': rel_std,
-                    'change': rel_r0['clashscore'].mean() - base_r0['clashscore'].mean(),
-                    'change_std': rel_std,
-                    'improved': rel_r0['clashscore'].mean() < base_r0['clashscore'].mean()
+                    'initial_clashscore': base_val,
+                    'final_clashscore': rel_mean,
+                    'change': change,
+                    'change_lo': change - change_min,
+                    'change_hi': change_max - change,
+                    'improved': rel_mean < base_val
                 })
             # ranked_1-4 = unrelaxed
             base_rest = baseline[(baseline['protein'] == protein) & (~baseline['model'].isin(['ranked_0']))]
             rel_rest = relaxed[(relaxed['protein'] == protein) & (~relaxed['model'].str.startswith('ranked_0'))]
             if len(base_rest) and len(rel_rest):
-                rel_std = rel_rest['clashscore'].std()
+                base_val = base_rest['clashscore'].mean()
+                rel_mean = rel_rest['clashscore'].mean()
+                change = rel_mean - base_val
+                change_min = rel_rest['clashscore'].min() - base_val
+                change_max = rel_rest['clashscore'].max() - base_val
                 data.append({
                     'protein': protein,
                     'category': category,
                     'af_type': 'ranked_1-4 (unrelaxed)',
-                    'initial_clashscore': base_rest['clashscore'].mean(),
-                    'final_clashscore': rel_rest['clashscore'].mean(),
-                    'final_std': rel_std,
-                    'change': rel_rest['clashscore'].mean() - base_rest['clashscore'].mean(),
-                    'change_std': rel_std,
-                    'improved': rel_rest['clashscore'].mean() < base_rest['clashscore'].mean()
+                    'initial_clashscore': base_val,
+                    'final_clashscore': rel_mean,
+                    'change': change,
+                    'change_lo': change - change_min,
+                    'change_hi': change_max - change,
+                    'improved': rel_mean < base_val
                 })
     else:  # Boltz
         baseline = cat_df[cat_df['subcategory'] == 'raw']
@@ -82,7 +93,9 @@ for category in ['Experimental', 'AlphaFold', 'Boltz']:
             base_clash = baseline[baseline['protein'] == protein]['clashscore'].mean()
             rel_data = relaxed[relaxed['protein'] == protein]['clashscore']
             rel_clash = rel_data.mean()
-            rel_std = rel_data.std()
+            change = rel_clash - base_clash
+            change_min = rel_data.min() - base_clash
+            change_max = rel_data.max() - base_clash
             if pd.notna(base_clash) and pd.notna(rel_clash):
                 data.append({
                     'protein': protein,
@@ -90,9 +103,9 @@ for category in ['Experimental', 'AlphaFold', 'Boltz']:
                     'af_type': None,
                     'initial_clashscore': base_clash,
                     'final_clashscore': rel_clash,
-                    'final_std': rel_std,
-                    'change': rel_clash - base_clash,
-                    'change_std': rel_std,
+                    'change': change,
+                    'change_lo': change - change_min,
+                    'change_hi': change_max - change,
                     'improved': rel_clash < base_clash
                 })
 
@@ -143,18 +156,21 @@ for i, cat in enumerate(['Experimental', 'AlphaFold', 'Boltz']):
         r0_data = cat_data[cat_data['af_type'] == 'ranked_0 (AMBER)']
         rest_data = cat_data[cat_data['af_type'] == 'ranked_1-4 (unrelaxed)']
 
+        # ranked_0 = black circles, ranked_1-4 = dark blue circles
         ax.errorbar(r0_data['initial_clashscore'], r0_data['change'],
-                    yerr=r0_data['change_std'], fmt='s', c='darkblue', alpha=0.7,
+                    yerr=[r0_data['change_lo'], r0_data['change_hi']],
+                    fmt='o', c='black', alpha=0.7,
                     markersize=8, label='ranked_0 (AMBER)', capsize=3)
         ax.errorbar(rest_data['initial_clashscore'], rest_data['change'],
-                    yerr=rest_data['change_std'], fmt='o', c='lightblue', alpha=0.7,
-                    markersize=8, label='ranked_1-4 (unrelaxed)', capsize=3,
-                    markeredgecolor='blue')
+                    yerr=[rest_data['change_lo'], rest_data['change_hi']],
+                    fmt='o', c='darkblue', alpha=0.7,
+                    markersize=8, label='ranked_1-4 (unrelaxed)', capsize=3)
 
         ax.legend(loc='upper right', fontsize=8)
     else:
         ax.errorbar(cat_data['initial_clashscore'], cat_data['change'],
-                    yerr=cat_data['change_std'], fmt='o', c=colors[cat], alpha=0.7,
+                    yerr=[cat_data['change_lo'], cat_data['change_hi']],
+                    fmt='o', c=colors[cat], alpha=0.7,
                     markersize=8, capsize=3)
 
     ax.axhline(0, color='black', linestyle='--', alpha=0.5)
