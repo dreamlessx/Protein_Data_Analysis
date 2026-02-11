@@ -28,6 +28,8 @@
 | AlphaFold | NO | 0.26-0.55 | +0.06 to +0.12 |
 | Boltz | NO | 0.06-0.28 | +0.13 to +0.18 |
 
+**PoseBusters caveat:** While MolProbity shows improvement, PoseBusters binary tests reveal 80% of structures fail steric clash checks (stricter VDW thresholds). Boltz starts best (21% all-pass) but relaxation degrades it (→15%).
+
 ---
 
 ## 2. Project Overview
@@ -81,6 +83,8 @@
 
 ### 3.4 Validation Metrics
 
+**MolProbity (continuous metrics):**
+
 | Metric | Source | What it Measures |
 |--------|--------|------------------|
 | Clashscore | MolProbity | Steric clashes per 1000 atoms |
@@ -89,6 +93,22 @@
 | Rotamer Outliers | MolProbity | Sidechain geometry (%) |
 | Bond RMSZ | MolProbity | Bond length deviation (Z-score) |
 | Angle RMSZ | MolProbity | Bond angle deviation (Z-score) |
+
+**PoseBusters (12 binary pass/fail tests):**
+
+| Test | What it Checks |
+|------|----------------|
+| structure_loaded | PDB file readable |
+| valid_residues | Only standard amino acids |
+| backbone_connected | No backbone breaks (C-N < 2.0Å) |
+| bond_lengths | Peptide bonds 1.18-1.48Å |
+| bond_angles | N-CA-C angles 100-120° |
+| steric_clashes | No severe VDW overlaps (>0.5Å) |
+| aromatic_flatness | Ring RMSD < 0.1Å |
+| peptide_planarity | Omega angles cis/trans (not twisted) |
+| chirality | L-amino acids only |
+| complete_residues | All backbone atoms present |
+| internal_energy | Rosetta score < 0 |
 
 ---
 
@@ -210,6 +230,46 @@
 | % Experimental | 32% | 32% |
 
 **Conclusion:** Degradation is NOT source-specific — it's quality-specific. Structures already below the ~14 attractor get pushed *toward* it, making them worse.
+
+---
+
+### 4.6 Finding #6: PoseBusters Reveals Different Story
+
+**Observation:** PoseBusters binary tests show most structures fail at least one geometry check. Steric clashes dominate failures.
+
+**Overall Pass Rates (all 12 tests pass):**
+
+| Source | Raw/Original | After Relaxation | Δ |
+|--------|--------------|------------------|---|
+| Experimental | 5.0% | 3.3% | -1.7% |
+| AlphaFold | 3.0% | 5.9% | **+2.9%** |
+| Boltz | 21.0% | 15.1% | **-5.9%** |
+
+**Individual Test Pass Rates:**
+
+| Test | Pass Rate | Notes |
+|------|-----------|-------|
+| steric_clashes | **19.7%** | Major failure point |
+| bond_angles | 70.7% | N-CA-C geometry |
+| bond_lengths | 88.2% | Peptide bonds |
+| peptide_planarity | 95.4% | Omega angles |
+| internal_energy | 97.1% | Rosetta score |
+| backbone_connected | 97.4% | Chain breaks |
+| structure_loaded | 100% | — |
+| valid_residues | 100% | — |
+| aromatic_flatness | 100% | — |
+| chirality | 100% | — |
+| complete_residues | 100% | — |
+
+**Mean Tests Passed (out of 12):**
+
+| Source | Raw | Relaxed |
+|--------|-----|---------|
+| Experimental | 8.1 | 8.8 |
+| AlphaFold | 8.7 | 9.7 |
+| Boltz | 9.8 | 9.9 |
+
+**Key Insight:** PoseBusters uses stricter VDW overlap thresholds than MolProbity clashscore. While MolProbity shows convergence to ~14 (acceptable), PoseBusters flags 80% of structures for steric clashes. Boltz starts best on PoseBusters but relaxation slightly degrades it — opposite of MolProbity findings.
 
 ---
 
@@ -398,9 +458,10 @@ Analysis of 22 structures that degraded: category distribution, initial score di
 | 1 | Relaxation delta | Does relaxation improve quality? | **PILOT DONE** |
 | 2 | Protocol ranking | Which Rosetta protocol is best? | **PILOT DONE** |
 | 3 | Convergence test | Do all sources converge to same geometry? | **PILOT DONE** |
-| 4 | AMBER vs Rosetta | Paired analysis (±AMBER, then Rosetta) | Planned |
-| 5 | MSA depth effect | full_dbs vs reduced_dbs fallback | Planned |
-| 6 | DockQ correlation | Does MolProbity improvement = DockQ improvement? | Planned |
+| 4 | PoseBusters validation | Do structures pass binary geometry tests? | **PILOT DONE** |
+| 5 | AMBER vs Rosetta | Paired analysis (±AMBER, then Rosetta) | Planned |
+| 6 | MSA depth effect | full_dbs vs reduced_dbs fallback | Planned |
+| 7 | DockQ correlation | Does MolProbity improvement = DockQ improvement? | Planned |
 
 ### 9.2 Key Findings for Paper
 
@@ -409,6 +470,7 @@ Analysis of 22 structures that degraded: category distribution, initial score di
 3. **Ceiling effect:** Already-good structures (MolProbity < 1.0) get worse
 4. **Protocol recommendation:** normal_beta is best; avoid cartesian protocols
 5. **AMBER pre-processing:** Rosetta relaxation on AMBER-relaxed structures is counterproductive
+6. **MolProbity vs PoseBusters disagreement:** MolProbity shows improvement; PoseBusters shows 80% steric clash failures (stricter thresholds)
 
 ### 9.3 Target Journals
 
