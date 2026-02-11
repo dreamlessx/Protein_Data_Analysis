@@ -269,7 +269,25 @@
 | AlphaFold | 8.7 | 9.7 |
 | Boltz | 9.8 | 9.9 |
 
-**Key Insight:** PoseBusters uses stricter VDW overlap thresholds than MolProbity clashscore. While MolProbity shows convergence to ~14 (acceptable), PoseBusters flags 80% of structures for steric clashes. Boltz starts best on PoseBusters but relaxation slightly degrades it — opposite of MolProbity findings.
+**Continuous Metrics (mean values):**
+
+| Metric | Exp Raw | Exp Relax | AF Raw | AF Relax | Boltz Raw | Boltz Relax |
+|--------|---------|-----------|--------|----------|-----------|-------------|
+| Steric clashes (count) | 2.2 | **9.2** | 8.3 | **10.1** | 23.6 | **7.9** |
+| Worst overlap (A) | 0.57 | 1.00 | 1.27 | 1.01 | 1.31 | 0.99 |
+| Angle outliers | 5.2 | 2.4 | 0.0 | 0.3 | 0.0 | 2.7 |
+| Twisted omega | 0.7 | 0.3 | 0.7 | 0.0 | 0.0 | 0.1 |
+| Rosetta energy | +967 | **-1735** | +2501 | **-1489** | +149088 | **-1778** |
+
+**Key Insights:**
+
+1. **Steric clashes increase for Exp/AF after relaxation** — opposite of MolProbity. PoseBusters counts atoms with >0.5A VDW overlap; MolProbity normalizes per 1000 atoms.
+
+2. **Boltz starts with extreme Rosetta energy** (+149k) indicating severe initial clashes, but relaxation fixes this (→-1778).
+
+3. **All sources achieve similar final Rosetta energies** (~-1500 to -1800) — same equilibrium convergence seen in MolProbity.
+
+4. **Boltz uniquely improves on PoseBusters clash count** (23.6 → 7.9) while Exp/AF get worse. This explains why Boltz all-pass rate drops after relaxation (21% → 15%) — other tests fail.
 
 ---
 
