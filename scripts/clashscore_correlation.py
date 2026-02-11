@@ -73,11 +73,10 @@ for i, cat in enumerate(['Experimental', 'AlphaFold', 'Boltz']):
     ax.scatter(cat_data['initial_clashscore'], cat_data['change'],
                c=colors[cat], alpha=0.7, s=80)
 
-    # Label outliers
+    # Label ALL points
     for _, row in cat_data.iterrows():
-        if row['change'] > 5:  # Got much worse
-            ax.annotate(row['protein'], (row['initial_clashscore'], row['change']),
-                        fontsize=8, alpha=0.7)
+        ax.annotate(row['protein'], (row['initial_clashscore'], row['change']),
+                    fontsize=7, alpha=0.8, xytext=(3, 3), textcoords='offset points')
 
     ax.axhline(0, color='black', linestyle='--', alpha=0.5)
     ax.set_xlabel('Initial Clashscore')
