@@ -133,7 +133,7 @@ print(f"\nSaved outlier_characterization.png")
 
 # Summary for chat
 print("\n" + "=" * 70)
-print("SUMMARY FOR CLAUDECHAT")
+print("SUMMARY")
 print("=" * 70)
 print("""
 Key findings:
