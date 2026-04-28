@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Split AF analysis: ranked_0 (AMBER-relaxed) vs ranked_1-4 (unrelaxed)
-Per God Claude's methodological note.
+Methodological note: ranked_0 is pre-relaxed by AMBER inside AlphaFold.
 """
 
 import pandas as pd
@@ -119,7 +119,7 @@ if results_df[results_df['group'] == 'ranked_1-4']['improvement'].mean() > \
 ranked_1-4 (unrelaxed AF models) benefit MORE from Rosetta relaxation
 than ranked_0 (AMBER-relaxed AF models).
 
-This confirms God Claude's hypothesis: Rosetta relaxation is redundant for
+This confirms the hypothesis: Rosetta relaxation is redundant for
 already-relaxed structures but beneficial for unrelaxed ones.
 """)
 else:

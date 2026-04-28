@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate comprehensive scorecard for Wednesday presentation."""
+"""Generate composite MolProbity + PoseBusters scorecard for AF2 vs Boltz1 sources."""
 
 import pandas as pd
 import numpy as np
@@ -197,8 +197,8 @@ def main():
         ('raw_n_angle_outliers', 'PB Angle Outliers', '↓'),
         ('raw_n_twisted', 'PB Twisted Omega', '↓'),
         ('raw_rosetta_score', 'PB Rosetta Energy', '↓'),
-        ('raw_mean_bond_length', 'PB Mean Bond (Å)', '—'),
-        ('raw_mean_backbone_angle', 'PB Mean N-CA-C (°)', '—'),
+        ('raw_mean_bond_length', 'PB Mean Bond (Å)', '-'),
+        ('raw_mean_backbone_angle', 'PB Mean N-CA-C (°)', '-'),
     ]
 
     results = []
@@ -328,7 +328,7 @@ def main():
                 if flag:
                     cell += f" {flag}"
             else:
-                cell = "—"
+                cell = "-"
             cells.append(cell)
         print("| " + " | ".join(cells) + " |")
 
@@ -349,7 +349,7 @@ def main():
                 if flag:
                     cell += f" {flag}"
             else:
-                cell = "—"
+                cell = "-"
             cells.append(cell)
         print("| " + " | ".join(cells) + " |")
 
@@ -375,7 +375,7 @@ def main():
                 if flag:
                     cell += f" {flag}"
             else:
-                cell = "—"
+                cell = "-"
             cells.append(cell)
         print("| " + " | ".join(cells) + " |")
 

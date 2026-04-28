@@ -1,4 +1,4 @@
-// ... 164 more lines (total: 164)
+# Protein Structure Validation Pipeline
 ## 2026-04-27 100% Data Lock
 
 Companion repo `dreamlessx/Protein_Relax_Pipeline` reached full data lock:

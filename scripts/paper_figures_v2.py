@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Paper figures v2 - aligned with God Claude's original spec.
+Paper figures v2 - aligned with the original spec.
 
 Original spec:
-- Fig 1: Heatmap — clashscore improvement by (protocol) x (prediction method)
-- Fig 2: Paired scatter — pre vs post relaxation MolProbity scores per structure
-- Fig 3: Convergence — RMSD between crystal-relaxed and AF-relaxed (needs structural data)
-- Fig 4: Box plots — per-protocol delta_toward_bound (needs bound structures)
+- Fig 1: Heatmap, clashscore improvement by (protocol) x (prediction method)
+- Fig 2: Paired scatter, pre vs post relaxation MolProbity scores per structure
+- Fig 3: Convergence, RMSD between crystal-relaxed and AF-relaxed (needs structural data)
+- Fig 4: Box plots, per-protocol delta_toward_bound (needs bound structures)
 - Table 1: Summary statistics
 
 This script adds what's missing from v1 and can run with current data.

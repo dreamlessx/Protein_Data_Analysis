@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Characterize structures that got WORSE after relaxation.
-Per God Claude's request: are they all AF? Is it a ceiling effect?
+Question under test: are they all AF? Is it a ceiling effect?
 """
 
 import pandas as pd
