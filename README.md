@@ -2,16 +2,18 @@
 
 > **Phase 1 pilot (20 proteins, 6,820 structures).** Superseded by the full BM5.5 benchmark in `dreamlessx/Protein_Relax_Pipeline`. Kept here for the Phase 1 record.
 
-## 2026-04-28 Stages B + C complete (snapshot 2026-04-27a)
+## 2026-04-28 Stages B + C + B6 + B7 + B8 complete (snapshot 2026-04-27a)
 
-Companion repo `dreamlessx/Protein_Relax_Pipeline` is fully populated under the locked snapshot:
+Companion repo `dreamlessx/Protein_Relax_Pipeline` is fully populated, with every schema-defined table loaded and every silently-dropped row logged:
 - **rosetta_metrics**: 416,340 (locked)
-- **prerosetta_metrics**: 13,364 (= 13,344 + 20 Stage C Blue crystal backfill)
+- **prerosetta_metrics**: 13,364 (13,344 + 20 Stage C Blue crystal backfill)
 - **tm_scores**: 104,765 (12,065 pre + 92,700 post)
-- **targets**: 257 with full metadata (difficulty + category + n_chains + n_residues)
+- **rosetta_energy**: 183,373 (44.04% coverage; upstream-incomplete; gaps logged in qc_quarantine)
+- **targets**: 257 with full metadata + parent_pdb_id for the 4 non-standard
+- **qc_quarantine**: 240,451 audit rows (coverage_gap + exact_duplicate)
 - qc_status = pass
 
-DB + raw TSVs published as the `db-2026-04-27a-supp` Release on `dreamlessx/Protein_Relax_Pipeline`.
+DB + raw TSVs in the `db-2026-04-27a-supp` Release on `dreamlessx/Protein_Relax_Pipeline`.
 
 ## 2026-04-27 100% Data Lock
 
