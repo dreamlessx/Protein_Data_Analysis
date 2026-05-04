@@ -27,7 +27,7 @@ The companion repo `Protein_Relax_Pipeline` is fully populated under the locked 
 
 - **rosetta_metrics**: 416,340 (locked)
 - **prerosetta_metrics**: 13,364
-- **tm_scores**: 104,765 (12,065 pre + 92,700 post)
+- **tm_scores**: 105,550 (12,850 pre + 92,700 post)
 - **rosetta_energy**: 416,340 (100% coverage of rosetta_metrics)
 - **targets**: 257 with full metadata + parent_pdb_id for the 4 non-standard
 - **qc_quarantine**: 0
@@ -35,7 +35,7 @@ The companion repo `Protein_Relax_Pipeline` is fully populated under the locked 
 
 DB and raw TSVs in the [`db-2026-04-27a-supp`](https://github.com/dreamlessx/Protein_Relax_Pipeline/releases/tag/db-2026-04-27a-supp) Release.
 
-Three findings (full numbers in `Protein_Relax_Pipeline/red_analysis/PAPER_FINDINGS.md`):
+Five findings (full numbers in `Protein_Relax_Pipeline/red_analysis/PAPER_FINDINGS.md`):
 1. AMBER fixes local geometry without touching global fold (clashscore Cliff's d = -0.99, TM Cliff's d = -0.01).
 2. Crystal structures carry the worst pre-Rosetta MolProbity (idealization artifact, not failure).
 3. dualspace_beta wins integrated MolProbity at small TM cost; beta_nov16 dominates ref2015.
